@@ -9,7 +9,9 @@ import (
 	"github.com/fouched/go-todo/internal/core/services"
 	"github.com/fouched/go-todo/internal/transport/http/handlers"
 	"github.com/fouched/go-todo/platform/postgres"
+	"github.com/fouched/go-todo/platform/security"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
 )
 
 func main() {
@@ -37,14 +39,21 @@ func main() {
 	taskService := services.NewTaskService(taskRepo)
 
 	// Initialize handlers
-	userHandler := handlers.NewUserHandler(userService)
+	jwtSecret := getEnv("JWT_SECRET", "super-secret-key")
+	userHandler := handlers.NewUserHandler(userService, jwtSecret)
 	taskHandler := handlers.NewTaskHandler(taskService)
 
 	// Fiber v3 app
 	app := fiber.New()
 
-	// Register routes
-	userHandler.RegisterRoutes(app)
+	app.Use(cors.New())
+
+	// Public routes
+	userHandler.RegisterPublicRoutes(app)
+
+	// Protected routes
+	app.Use(security.JWTMiddleware(jwtSecret))
+	userHandler.RegisterProtectedRoutes(app)
 	taskHandler.RegisterRoutes(app)
 
 	// Start server

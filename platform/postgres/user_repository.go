@@ -90,3 +90,18 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models
 
 	return &u, err
 }
+
+func (r *UserRepository) DeleteByID(ctx context.Context, id int64) error {
+	query := `DELETE FROM users WHERE id = $1`
+
+	cmdTag, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return err
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return repositories.ErrNotFound
+	}
+
+	return nil
+}

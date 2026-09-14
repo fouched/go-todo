@@ -52,3 +52,7 @@ func (s *UserService) LoginUser(ctx context.Context, email, password string) (*m
 func (s *UserService) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	return s.users.FindByID(ctx, id)
 }
+
+func (s *UserService) DeleteUser(ctx context.Context, id int64) error {
+	return s.users.DeleteByID(ctx, id)
+}
