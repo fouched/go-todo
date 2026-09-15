@@ -95,6 +95,40 @@ func (r *TaskRepository) FindAllByUser(ctx context.Context, userID int64) ([]mod
 	return tasks, nil
 }
 
+func (r *TaskRepository) FindAllByUserAndCategory(ctx context.Context, userID int64, category string) ([]models.Task, error) {
+	query := `
+        SELECT id, title, description, category, is_completed, user_id
+        FROM tasks
+        WHERE user_id = $1 AND category = $2
+        ORDER BY id
+    `
+
+	rows, err := r.db.Query(ctx, query, userID, category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tasks := []models.Task{}
+
+	for rows.Next() {
+		var t models.Task
+		if err := rows.Scan(
+			&t.ID,
+			&t.Title,
+			&t.Description,
+			&t.Category,
+			&t.IsCompleted,
+			&t.UserID,
+		); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+
+	return tasks, nil
+}
+
 func (r *TaskRepository) Update(ctx context.Context, t *models.Task) error {
 	query := `
         UPDATE tasks
