@@ -3,20 +3,26 @@ package postgres
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/fouched/go-todo/internal/core/models"
 	"github.com/fouched/go-todo/internal/core/repositories"
+	"github.com/fouched/toolkit/v2/faults"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserRepository struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger *slog.Logger
 }
 
-func NewUserRepository(db *pgxpool.Pool) repositories.UserRepository {
-	return &UserRepository{db: db}
+func NewUserRepository(db *pgxpool.Pool, logger *slog.Logger) repositories.UserRepository {
+	return &UserRepository{
+		db:     db,
+		logger: logger,
+	}
 }
 
 func (r *UserRepository) Create(ctx context.Context, u *models.User) error {
@@ -37,12 +43,13 @@ func (r *UserRepository) Create(ctx context.Context, u *models.User) error {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" && pgErr.ConstraintName == "users_email_key" {
-				return repositories.ErrDuplicateEmail
+				r.logger.Error("create user error: duplicate email")
+				return faults.Wrap(repositories.ErrDuplicateEmail, "failed to create user")
 			}
 		}
 	}
 
-	return err
+	return faults.Wrap(err, "failed to create user")
 }
 
 func (r *UserRepository) FindByID(ctx context.Context, id int64) (*models.User, error) {
@@ -62,10 +69,16 @@ func (r *UserRepository) FindByID(ctx context.Context, id int64) (*models.User, 
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, repositories.ErrNotFound
+		r.logger.Error("error invalid user id")
+		return nil, faults.Wrap(repositories.ErrNotFound, "failed to find user by id")
 	}
 
-	return &u, err
+	if err != nil {
+		r.logger.Error("unknown error finding user by id")
+		return nil, faults.Wrap(err, "unknown error - failed to find user by id")
+	}
+
+	return &u, nil
 }
 
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models.User, error) {
@@ -85,10 +98,16 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, repositories.ErrNotFound
+		r.logger.Error("failed to find user by email")
+		return nil, faults.Wrap(repositories.ErrNotFound, "failed to find user by email")
 	}
 
-	return &u, err
+	if err != nil {
+		r.logger.Error("unknown error - find user by email")
+		return nil, faults.Wrap(err, "unknown error - failed to find user by email")
+	}
+
+	return &u, nil
 }
 
 func (r *UserRepository) DeleteByID(ctx context.Context, id int64) error {
@@ -100,7 +119,8 @@ func (r *UserRepository) DeleteByID(ctx context.Context, id int64) error {
 	}
 
 	if cmdTag.RowsAffected() == 0 {
-		return repositories.ErrNotFound
+		r.logger.Error("error - deleting user by email")
+		return faults.Wrap(repositories.ErrNotFound, "failed delete user")
 	}
 
 	return nil

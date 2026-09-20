@@ -3,18 +3,24 @@ package services
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/fouched/go-todo/internal/core/models"
 	"github.com/fouched/go-todo/internal/core/repositories"
+	"github.com/fouched/toolkit/v2/faults"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type UserService struct {
-	users repositories.UserRepository
+	users  repositories.UserRepository
+	logger *slog.Logger
 }
 
-func NewUserService(users repositories.UserRepository) *UserService {
-	return &UserService{users: users}
+func NewUserService(users repositories.UserRepository, logger *slog.Logger) *UserService {
+	return &UserService{
+		users:  users,
+		logger: logger,
+	}
 }
 
 func (s *UserService) RegisterUser(ctx context.Context, email, password string, role models.Role) (*models.User, error) {
@@ -30,7 +36,7 @@ func (s *UserService) RegisterUser(ctx context.Context, email, password string, 
 	}
 
 	if err := s.users.Create(ctx, user); err != nil {
-		return nil, err
+		return nil, faults.Wrap(err, "failed to create user")
 	}
 
 	return user, nil
@@ -39,7 +45,7 @@ func (s *UserService) RegisterUser(ctx context.Context, email, password string, 
 func (s *UserService) LoginUser(ctx context.Context, email, password string) (*models.User, error) {
 	user, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
-		return nil, err
+		return nil, faults.Wrap(err, "failed to find user by email")
 	}
 
 	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {

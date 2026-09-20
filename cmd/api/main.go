@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/fouched/go-todo/internal/transport/http/handlers"
 	"github.com/fouched/go-todo/platform/postgres"
 	"github.com/fouched/go-todo/platform/security"
+	"github.com/fouched/toolkit/v2/logging"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 )
@@ -22,7 +24,9 @@ func main() {
 	port := getEnvInt("DB_PORT", 5432)
 	user := getEnv("DB_USER", "postgres")
 	password := getEnv("DB_PASSWORD", "postgres")
-	dbname := getEnv("DB_NAME", "todo")
+	dbname := getEnv("DB_NAME", "taskdb-go")
+
+	logger := slog.New(logging.NewPrettyDevHandler())
 
 	// Connect to Postgres
 	db, err := postgres.NewDB(ctx, host, user, password, dbname, port)
@@ -31,16 +35,16 @@ func main() {
 	}
 
 	// Initialize repositories
-	userRepo := postgres.NewUserRepository(db.Pool)
+	userRepo := postgres.NewUserRepository(db.Pool, logger)
 	taskRepo := postgres.NewTaskRepository(db.Pool)
 
 	// Initialize services
-	userService := services.NewUserService(userRepo)
+	userService := services.NewUserService(userRepo, logger)
 	taskService := services.NewTaskService(taskRepo)
 
 	// Initialize handlers
 	jwtSecret := getEnv("JWT_SECRET", "super-secret-key")
-	userHandler := handlers.NewUserHandler(userService, jwtSecret)
+	userHandler := handlers.NewUserHandler(userService, jwtSecret, logger)
 	taskHandler := handlers.NewTaskHandler(taskService)
 
 	// Fiber v3 app
