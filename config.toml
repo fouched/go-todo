@@ -1,0 +1,16 @@
+[app]
+name = "todo-go"
+env = "development"
+
+[database]
+host = "localhost"
+port = 5432
+user = "postgres"
+password = "postgres"
+name = "taskdb-go"
+
+[jwt]
+secret = "super-secret-key"
+
+[server]
+port = 8080

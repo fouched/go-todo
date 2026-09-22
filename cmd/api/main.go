@@ -4,11 +4,10 @@ import (
 	"context"
 	"log"
 	"log/slog"
-	"os"
-	"strconv"
 
 	"github.com/fouched/go-todo/internal/core/services"
 	"github.com/fouched/go-todo/internal/transport/http/handlers"
+	"github.com/fouched/go-todo/platform/config"
 	"github.com/fouched/go-todo/platform/postgres"
 	"github.com/fouched/go-todo/platform/security"
 	"github.com/fouched/toolkit/v2/logging"
@@ -19,17 +18,21 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Load config from environment variables
-	host := getEnv("DB_HOST", "localhost")
-	port := getEnvInt("DB_PORT", 5432)
-	user := getEnv("DB_USER", "postgres")
-	password := getEnv("DB_PASSWORD", "postgres")
-	dbname := getEnv("DB_NAME", "taskdb-go")
+	// Load config
+	cfg, err := config.Load(".")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	logger := slog.New(logging.NewPrettyDevHandler())
 
 	// Connect to Postgres
-	db, err := postgres.NewDB(ctx, host, user, password, dbname, port)
+	db, err := postgres.NewDB(ctx,
+		cfg.Database.Host,
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Name,
+		cfg.Database.Port)
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
@@ -43,8 +46,7 @@ func main() {
 	taskService := services.NewTaskService(taskRepo)
 
 	// Initialize handlers
-	jwtSecret := getEnv("JWT_SECRET", "super-secret-key")
-	userHandler := handlers.NewUserHandler(userService, jwtSecret, logger)
+	userHandler := handlers.NewUserHandler(userService, cfg.JWT.Secret, logger)
 	taskHandler := handlers.NewTaskHandler(taskService)
 
 	// Fiber v3 app
@@ -56,29 +58,13 @@ func main() {
 	userHandler.RegisterPublicRoutes(app)
 
 	// Protected routes
-	app.Use(security.JWTMiddleware(jwtSecret))
+	app.Use(security.JWTMiddleware(cfg.JWT.Secret))
 	userHandler.RegisterProtectedRoutes(app)
 	taskHandler.RegisterRoutes(app)
 
 	// Start server
-	log.Println("Starting server on :8080")
+	logger.Info("Starting server on :8080")
 	if err := app.Listen(":8080"); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if v, err := strconv.Atoi(value); err == nil {
-			return v
-		}
-	}
-	return defaultValue
 }
