@@ -29,6 +29,10 @@ func (s *UserService) RegisterUser(ctx context.Context, email, password string, 
 		return nil, err
 	}
 
+	if role != models.RoleAdmin {
+		role = models.RoleUser
+	}
+
 	user := &models.User{
 		Email:    email,
 		Password: string(hashed),

@@ -51,9 +51,9 @@ func (h *UserHandler) Register(c fiber.Ctx) error {
 
 	user, err := h.service.RegisterUser(c.Context(), req.Email, req.Password, req.Role)
 	if err != nil {
-		h.logger.Error("registration failed: unknown error", err)
+		h.logger.Error("registration failed: ", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
+			"error": "Failed to register",
 		})
 	}
 
