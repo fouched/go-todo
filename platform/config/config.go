@@ -11,6 +11,7 @@ import (
 type Config struct {
 	App      AppConfig      `toml:"app"`
 	Database DatabaseConfig `toml:"database"`
+	Logging  LoggingConfig  `toml:"logging"`
 	Server   ServerConfig   `toml:"server"`
 	JWT      JWTConfig      `toml:"jwt"`
 }
@@ -26,6 +27,11 @@ type DatabaseConfig struct {
 	User     string `toml:"user"`
 	Password string `toml:"password"`
 	Name     string `toml:"name"`
+}
+
+type LoggingConfig struct {
+	Level   string `toml:"level"`   // "debug", "info", "warn", "error"
+	Dynamic bool   `toml:"dynamic"` // allow runtime changes
 }
 
 type JWTConfig struct {

@@ -43,7 +43,6 @@ func (r *UserRepository) Create(ctx context.Context, u *models.User) error {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" && pgErr.ConstraintName == "users_email_key" {
-				r.logger.Error("create user error: duplicate email")
 				return faults.Wrap(repositories.ErrDuplicateEmail, "failed to create user")
 			}
 		}
@@ -69,12 +68,10 @@ func (r *UserRepository) FindByID(ctx context.Context, id int64) (*models.User, 
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		r.logger.Error("error invalid user id")
 		return nil, faults.Wrap(repositories.ErrNotFound, "failed to find user by id")
 	}
 
 	if err != nil {
-		r.logger.Error("unknown error finding user by id")
 		return nil, faults.Wrap(err, "unknown error - failed to find user by id")
 	}
 
@@ -98,12 +95,10 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*models
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		r.logger.Error("failed to find user by email")
 		return nil, faults.Wrap(repositories.ErrNotFound, "failed to find user by email")
 	}
 
 	if err != nil {
-		r.logger.Error("unknown error - find user by email")
 		return nil, faults.Wrap(err, "unknown error - failed to find user by email")
 	}
 
@@ -119,7 +114,6 @@ func (r *UserRepository) DeleteByID(ctx context.Context, id int64) error {
 	}
 
 	if cmdTag.RowsAffected() == 0 {
-		r.logger.Error("error - deleting user by email")
 		return faults.Wrap(repositories.ErrNotFound, "failed delete user")
 	}
 

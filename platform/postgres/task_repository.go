@@ -3,19 +3,26 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 
 	"github.com/fouched/go-todo/internal/core/models"
 	"github.com/fouched/go-todo/internal/core/repositories"
+	"github.com/fouched/toolkit/v2/faults"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type TaskRepository struct {
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
+	logger *slog.Logger
 }
 
-func NewTaskRepository(db *pgxpool.Pool) *TaskRepository {
-	return &TaskRepository{db: db}
+func NewTaskRepository(db *pgxpool.Pool, logger *slog.Logger) *TaskRepository {
+	return &TaskRepository{
+		db:     db,
+		logger: logger,
+	}
 }
 
 func (r *TaskRepository) Create(ctx context.Context, t *models.Task) error {
@@ -33,7 +40,7 @@ func (r *TaskRepository) Create(ctx context.Context, t *models.Task) error {
 		t.UserID,
 	).Scan(&t.ID)
 
-	return err
+	return faults.Wrap(err, "failed to create task")
 }
 
 func (r *TaskRepository) FindByID(ctx context.Context, id int64) (*models.Task, error) {
@@ -54,11 +61,16 @@ func (r *TaskRepository) FindByID(ctx context.Context, id int64) (*models.Task, 
 		&t.UserID,
 	)
 
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, repositories.ErrNotFound
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Annotate gives context without wiping out the core Sentinel identity!
+			return nil, faults.Annotate(repositories.ErrNotFound, fmt.Sprintf("task %d row not found", id))
+		}
+		// Wrap captures the stack track immediately for real, unexpected DB faults
+		return nil, faults.Wrap(err, "database query execution failed")
 	}
 
-	return &t, err
+	return &t, nil
 }
 
 func (r *TaskRepository) FindAllByUser(ctx context.Context, userID int64) ([]models.Task, error) {
@@ -71,7 +83,7 @@ func (r *TaskRepository) FindAllByUser(ctx context.Context, userID int64) ([]mod
 
 	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
-		return nil, err
+		return nil, faults.Wrap(err, "failed to find all tasks for user")
 	}
 	defer rows.Close()
 
@@ -87,7 +99,7 @@ func (r *TaskRepository) FindAllByUser(ctx context.Context, userID int64) ([]mod
 			&t.IsCompleted,
 			&t.UserID,
 		); err != nil {
-			return nil, err
+			return nil, faults.Wrap(err, "failed to scan all tasks for user")
 		}
 		tasks = append(tasks, t)
 	}
@@ -105,7 +117,7 @@ func (r *TaskRepository) FindAllByUserAndCategory(ctx context.Context, userID in
 
 	rows, err := r.db.Query(ctx, query, userID, category)
 	if err != nil {
-		return nil, err
+		return nil, faults.Wrap(err, "failed to find all tasks for user by category")
 	}
 	defer rows.Close()
 
@@ -121,7 +133,7 @@ func (r *TaskRepository) FindAllByUserAndCategory(ctx context.Context, userID in
 			&t.IsCompleted,
 			&t.UserID,
 		); err != nil {
-			return nil, err
+			return nil, faults.Wrap(err, "failed to scan all tasks for user by category")
 		}
 		tasks = append(tasks, t)
 	}
@@ -148,11 +160,11 @@ func (r *TaskRepository) Update(ctx context.Context, t *models.Task) error {
 	)
 
 	if err != nil {
-		return err
+		return faults.Wrap(err, "failed to update task")
 	}
 
 	if cmd.RowsAffected() == 0 {
-		return repositories.ErrNotFound
+		return faults.Annotate(repositories.ErrNotFound, "failed to update task")
 	}
 
 	return nil
@@ -163,11 +175,11 @@ func (r *TaskRepository) Delete(ctx context.Context, id int64) error {
 
 	cmd, err := r.db.Exec(ctx, query, id)
 	if err != nil {
-		return err
+		return faults.Wrap(err, "failed to delete task")
 	}
 
 	if cmd.RowsAffected() == 0 {
-		return repositories.ErrNotFound
+		return faults.Annotate(repositories.ErrNotFound, fmt.Sprintf("failed to delete task %d row not found", id))
 	}
 
 	return nil

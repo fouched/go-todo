@@ -1,6 +1,6 @@
 [app]
 name = "todo-go"
-env = "development"
+env = "production"
 
 [database]
 host = "localhost"
@@ -8,6 +8,10 @@ port = 5432
 user = "postgres"
 password = "postgres"
 name = "taskdb-go"
+
+[logging]
+level = "info"        # debug, info, warn, error
+dynamic = true        # allow runtime changes (default true)
 
 [jwt]
 secret = "super-secret-key"

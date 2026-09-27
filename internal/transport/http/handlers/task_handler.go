@@ -1,25 +1,29 @@
 package handlers
 
 import (
+	"log/slog"
 	"strconv"
 
 	"github.com/fouched/go-todo/internal/core/models"
-	"github.com/fouched/go-todo/internal/core/services"
 	"github.com/gofiber/fiber/v3"
 )
 
 type TaskHandler struct {
-	service *services.TaskService
+	service TaskService
+	logger  *slog.Logger
 }
 
-func NewTaskHandler(service *services.TaskService) *TaskHandler {
-	return &TaskHandler{service: service}
+func NewTaskHandler(service TaskService, logger *slog.Logger) *TaskHandler {
+	return &TaskHandler{
+		service: service,
+		logger:  logger,
+	}
 }
 
 func (h *TaskHandler) RegisterRoutes(app *fiber.App) {
 	group := app.Group("/api/tasks")
 
-	group.Post("/", h.CreateTask)
+	group.Post("", h.CreateTask)
 	group.Get("/:id", h.GetTaskByID)
 	group.Get("/user/:userID", h.GetTasksForUser)
 	group.Put("/:id", h.UpdateTask)
@@ -38,7 +42,7 @@ func (h *TaskHandler) CreateTask(c fiber.Ctx) error {
 	userID, err := strconv.ParseInt(c.Query("user_id"), 10, 64)
 	if err != nil || userID <= 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "user_id is required",
+			"error": "user_id is required and must be a positive integer",
 		})
 	}
 
@@ -50,9 +54,7 @@ func (h *TaskHandler) CreateTask(c fiber.Ctx) error {
 
 	saved, err := h.service.CreateTask(c.Context(), userID, task)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return err
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(TaskResponse{
@@ -66,17 +68,15 @@ func (h *TaskHandler) CreateTask(c fiber.Ctx) error {
 
 func (h *TaskHandler) GetTaskByID(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
+	if err != nil || id <= 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid id",
+			"error": "invalid task id",
 		})
 	}
 
 	task, err := h.service.GetTaskByID(c.Context(), id)
 	if err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "task not found",
-		})
+		return err
 	}
 
 	return c.JSON(TaskResponse{
@@ -92,15 +92,13 @@ func (h *TaskHandler) GetTasksForUser(c fiber.Ctx) error {
 	userID, err := strconv.ParseInt(c.Params("userID"), 10, 64)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid userID",
+			"error": "invalid user id",
 		})
 	}
 
 	tasks, err := h.service.GetTasksForUser(c.Context(), userID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return err
 	}
 
 	responses := make([]TaskResponse, 0, len(tasks))
@@ -119,9 +117,9 @@ func (h *TaskHandler) GetTasksForUser(c fiber.Ctx) error {
 
 func (h *TaskHandler) UpdateTask(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
+	if err != nil || id <= 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid id",
+			"error": "invalid task id",
 		})
 	}
 
@@ -141,9 +139,7 @@ func (h *TaskHandler) UpdateTask(c fiber.Ctx) error {
 	}
 
 	if err := h.service.UpdateTask(c.Context(), task); err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "task not found",
-		})
+		return err
 	}
 
 	return c.JSON(TaskResponse{
@@ -157,16 +153,14 @@ func (h *TaskHandler) UpdateTask(c fiber.Ctx) error {
 
 func (h *TaskHandler) DeleteTask(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
+	if err != nil || id <= 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid id",
+			"error": "invalid task id",
 		})
 	}
 
 	if err := h.service.DeleteTask(c.Context(), id); err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "task not found",
-		})
+		return err
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)

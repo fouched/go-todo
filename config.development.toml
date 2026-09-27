@@ -9,6 +9,10 @@ user = "postgres"
 password = "postgres"
 name = "taskdb-go"
 
+[logging]
+level = "debug"        # debug, info, warn, error
+dynamic = false        # allow runtime changes
+
 [jwt]
 secret = "super-secret-key"
 

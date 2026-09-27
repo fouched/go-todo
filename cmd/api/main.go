@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
+	"os"
 
 	"github.com/fouched/go-todo/internal/core/services"
 	"github.com/fouched/go-todo/internal/transport/http/handlers"
+	"github.com/fouched/go-todo/internal/transport/http/middleware"
 	"github.com/fouched/go-todo/platform/config"
 	"github.com/fouched/go-todo/platform/postgres"
 	"github.com/fouched/go-todo/platform/security"
@@ -24,7 +27,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	logger := slog.New(logging.NewPrettyDevHandler())
+	baseLogger := initLogging(cfg)
 
 	// Connect to Postgres
 	db, err := postgres.NewDB(ctx,
@@ -38,20 +41,21 @@ func main() {
 	}
 
 	// Initialize repositories
-	userRepo := postgres.NewUserRepository(db.Pool, logger)
-	taskRepo := postgres.NewTaskRepository(db.Pool)
+	userRepo := postgres.NewUserRepository(db.Pool, baseLogger)
+	taskRepo := postgres.NewTaskRepository(db.Pool, baseLogger)
 
 	// Initialize services
-	userService := services.NewUserService(userRepo, logger)
-	taskService := services.NewTaskService(taskRepo)
+	userService := services.NewUserService(userRepo, baseLogger)
+	taskService := services.NewTaskService(taskRepo, baseLogger)
 
 	// Initialize handlers
-	userHandler := handlers.NewUserHandler(userService, cfg.JWT.Secret, logger)
-	taskHandler := handlers.NewTaskHandler(taskService)
+	userHandler := handlers.NewUserHandler(userService, cfg.JWT.Secret, baseLogger)
+	taskHandler := handlers.NewTaskHandler(taskService, baseLogger)
 
 	// Fiber v3 app
-	app := fiber.New()
-
+	app := fiber.New(fiber.Config{
+		ErrorHandler: middleware.NewErrorHandler(baseLogger),
+	})
 	app.Use(cors.New())
 
 	// Public routes
@@ -63,8 +67,38 @@ func main() {
 	taskHandler.RegisterRoutes(app)
 
 	// Start server
-	logger.Info("Starting server on :8080")
+	baseLogger.Info("Starting server on :8080")
 	if err := app.Listen(":8080"); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func initLogging(cfg *config.Config) *slog.Logger {
+	var encoder slog.Handler
+	isDevelopment := cfg.App.Env == "development"
+	if isDevelopment {
+		encoder = logging.NewPrettyDevHandler()
+	} else {
+		lvl, err := logging.ParseLevel(cfg.Logging.Level)
+		if err != nil {
+			// Fallback to INFO but log the issue
+			fmt.Printf("Invalid log level %q, defaulting to INFO\n", cfg.Logging.Level)
+			lvl = slog.LevelInfo
+		}
+
+		logging.ProdLevel.Set(lvl)
+		jsonHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: logging.ProdLevel, // <-- dynamic!
+		})
+		encoder = &logging.ProdHandler{
+			Handler: jsonHandler,
+		}
+	}
+
+	// Create the core base logger
+	baseLogger := slog.New(encoder)
+
+	// Optional: Set as global just in case external libraries rely on it
+	slog.SetDefault(baseLogger)
+	return baseLogger
 }

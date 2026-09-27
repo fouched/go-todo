@@ -2,17 +2,22 @@ package services
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/fouched/go-todo/internal/core/models"
 	"github.com/fouched/go-todo/internal/core/repositories"
 )
 
 type TaskService struct {
-	tasks repositories.TaskRepository
+	tasks  repositories.TaskRepository
+	logger *slog.Logger
 }
 
-func NewTaskService(tasks repositories.TaskRepository) *TaskService {
-	return &TaskService{tasks: tasks}
+func NewTaskService(tasks repositories.TaskRepository, logger *slog.Logger) *TaskService {
+	return &TaskService{
+		tasks:  tasks,
+		logger: logger,
+	}
 }
 
 func (s *TaskService) CreateTask(ctx context.Context, userID int64, req *models.Task) (*models.Task, error) {
