@@ -8,9 +8,8 @@ import (
 
 type TaskRepository interface {
 	Create(ctx context.Context, t *models.Task) error
-	FindByID(ctx context.Context, id int64) (*models.Task, error)
 	FindAllByUser(ctx context.Context, userID int64) ([]models.Task, error)
 	FindAllByUserAndCategory(ctx context.Context, userID int64, category string) ([]models.Task, error)
 	Update(ctx context.Context, t *models.Task) error
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, userID int64, taskID int64) error
 }

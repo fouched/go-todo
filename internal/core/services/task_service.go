@@ -31,18 +31,17 @@ func (s *TaskService) CreateTask(ctx context.Context, userID int64, req *models.
 	return req, nil
 }
 
-func (s *TaskService) GetTaskByID(ctx context.Context, id int64) (*models.Task, error) {
-	return s.tasks.FindByID(ctx, id)
+func (s *TaskService) GetTasksByUserAndCategory(ctx context.Context, userID int64, category string) ([]models.Task, error) {
+	if category == "" {
+		return s.tasks.FindAllByUser(ctx, userID)
+	}
+	return s.tasks.FindAllByUserAndCategory(ctx, userID, category)
 }
 
-func (s *TaskService) GetTasksForUser(ctx context.Context, userID int64) ([]models.Task, error) {
-	return s.tasks.FindAllByUser(ctx, userID)
-}
-
-func (s *TaskService) UpdateTask(ctx context.Context, t *models.Task) error {
+func (s *TaskService) UpdateTask(ctx context.Context, userID int64, t *models.Task) error {
 	return s.tasks.Update(ctx, t)
 }
 
-func (s *TaskService) DeleteTask(ctx context.Context, id int64) error {
-	return s.tasks.Delete(ctx, id)
+func (s *TaskService) DeleteTask(ctx context.Context, userID int64, id int64) error {
+	return s.tasks.Delete(ctx, userID, id)
 }

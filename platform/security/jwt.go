@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/fouched/go-todo/internal/core/models"
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -27,4 +28,9 @@ func GenerateToken(user *models.User, secret string) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secret))
+}
+
+func GetClaims(c fiber.Ctx) (*Claims, bool) {
+	claims, ok := c.Locals("user").(*Claims)
+	return claims, ok
 }

@@ -12,7 +12,6 @@ import (
 	"github.com/fouched/go-todo/internal/transport/http/middleware"
 	"github.com/fouched/go-todo/platform/config"
 	"github.com/fouched/go-todo/platform/postgres"
-	"github.com/fouched/go-todo/platform/security"
 	"github.com/fouched/toolkit/v2/logging"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
@@ -49,7 +48,7 @@ func main() {
 	taskService := services.NewTaskService(taskRepo, baseLogger)
 
 	// Initialize handlers
-	userHandler := handlers.NewUserHandler(userService, cfg.JWT.Secret, baseLogger)
+	userHandler := handlers.NewUserHandler(userService, baseLogger)
 	taskHandler := handlers.NewTaskHandler(taskService, baseLogger)
 
 	// Fiber v3 app
@@ -59,12 +58,11 @@ func main() {
 	app.Use(cors.New())
 
 	// Public routes
-	userHandler.RegisterPublicRoutes(app)
+	userHandler.RegisterPublicRoutes(app, cfg.JWT.Secret)
 
-	// Protected routes
-	app.Use(security.JWTMiddleware(cfg.JWT.Secret))
-	userHandler.RegisterProtectedRoutes(app)
-	taskHandler.RegisterRoutes(app)
+	// Protected paths - pass the secret explicitly so handlers can manage their own scopes
+	userHandler.RegisterProtectedRoutes(app, cfg.JWT.Secret)
+	taskHandler.RegisterProtectedRoutes(app, cfg.JWT.Secret)
 
 	// Start server
 	baseLogger.Info("Starting server on :8080")

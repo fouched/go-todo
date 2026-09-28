@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/fouched/go-todo/internal/core/models"
+	"github.com/fouched/go-todo/platform/security"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -20,12 +21,12 @@ func NewTaskHandler(service TaskService, logger *slog.Logger) *TaskHandler {
 	}
 }
 
-func (h *TaskHandler) RegisterRoutes(app *fiber.App) {
-	group := app.Group("/api/tasks")
+func (h *TaskHandler) RegisterProtectedRoutes(app *fiber.App, jwtSecret string) {
+	// Everything attached to this specific subgroup is explicitly protected
+	group := app.Group("/api/tasks", security.JWTMiddleware(jwtSecret))
 
+	group.Get("/", h.GetTasksByUserAndCategory)
 	group.Post("", h.CreateTask)
-	group.Get("/:id", h.GetTaskByID)
-	group.Get("/user/:userID", h.GetTasksForUser)
 	group.Put("/:id", h.UpdateTask)
 	group.Delete("/:id", h.DeleteTask)
 }
@@ -39,11 +40,9 @@ func (h *TaskHandler) CreateTask(c fiber.Ctx) error {
 		})
 	}
 
-	userID, err := strconv.ParseInt(c.Query("user_id"), 10, 64)
-	if err != nil || userID <= 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "user_id is required and must be a positive integer",
-		})
+	claims, ok := security.GetClaims(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
 	task := &models.Task{
@@ -52,7 +51,7 @@ func (h *TaskHandler) CreateTask(c fiber.Ctx) error {
 		Category:    req.Category,
 	}
 
-	saved, err := h.service.CreateTask(c.Context(), userID, task)
+	saved, err := h.service.CreateTask(c.Context(), claims.UserID, task)
 	if err != nil {
 		return err
 	}
@@ -66,37 +65,16 @@ func (h *TaskHandler) CreateTask(c fiber.Ctx) error {
 	})
 }
 
-func (h *TaskHandler) GetTaskByID(c fiber.Ctx) error {
-	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil || id <= 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid task id",
-		})
+func (h *TaskHandler) GetTasksByUserAndCategory(c fiber.Ctx) error {
+	claims, ok := security.GetClaims(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	task, err := h.service.GetTaskByID(c.Context(), id)
-	if err != nil {
-		return err
-	}
+	// Read from query parameters
+	category := c.Query("category", "")
 
-	return c.JSON(TaskResponse{
-		ID:          task.ID,
-		Title:       task.Title,
-		Description: task.Description,
-		Category:    task.Category,
-		IsCompleted: task.IsCompleted,
-	})
-}
-
-func (h *TaskHandler) GetTasksForUser(c fiber.Ctx) error {
-	userID, err := strconv.ParseInt(c.Params("userID"), 10, 64)
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid user id",
-		})
-	}
-
-	tasks, err := h.service.GetTasksForUser(c.Context(), userID)
+	tasks, err := h.service.GetTasksByUserAndCategory(c.Context(), claims.UserID, category)
 	if err != nil {
 		return err
 	}
@@ -123,6 +101,11 @@ func (h *TaskHandler) UpdateTask(c fiber.Ctx) error {
 		})
 	}
 
+	claims, ok := security.GetClaims(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
 	var req UpdateTaskRequest
 	if err := c.Bind().Body(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -132,13 +115,14 @@ func (h *TaskHandler) UpdateTask(c fiber.Ctx) error {
 
 	task := &models.Task{
 		ID:          id,
+		UserID:      claims.UserID,
 		Title:       req.Title,
 		Description: req.Description,
 		Category:    req.Category,
 		IsCompleted: req.IsCompleted,
 	}
 
-	if err := h.service.UpdateTask(c.Context(), task); err != nil {
+	if err := h.service.UpdateTask(c.Context(), claims.UserID, task); err != nil {
 		return err
 	}
 
@@ -159,7 +143,12 @@ func (h *TaskHandler) DeleteTask(c fiber.Ctx) error {
 		})
 	}
 
-	if err := h.service.DeleteTask(c.Context(), id); err != nil {
+	claims, ok := security.GetClaims(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	if err := h.service.DeleteTask(c.Context(), claims.UserID, id); err != nil {
 		return err
 	}
 

@@ -1,60 +1,54 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"strconv"
 
 	"github.com/fouched/go-todo/internal/core/models"
-	"github.com/fouched/go-todo/internal/core/repositories"
-	"github.com/fouched/go-todo/internal/core/services"
 	"github.com/fouched/go-todo/platform/security"
 	"github.com/gofiber/fiber/v3"
 )
 
 type UserHandler struct {
-	service   *services.UserService
-	jwtSecret string
-	logger    *slog.Logger
+	service UserService
+	logger  *slog.Logger
 }
 
-func NewUserHandler(service *services.UserService, jwtSecret string, logger *slog.Logger) *UserHandler {
+func NewUserHandler(service UserService, logger *slog.Logger) *UserHandler {
 	return &UserHandler{
-		service:   service,
-		jwtSecret: jwtSecret,
-		logger:    logger,
+		service: service,
+		logger:  logger,
 	}
 }
 
-func (h *UserHandler) RegisterPublicRoutes(app *fiber.App) {
+func (h *UserHandler) RegisterPublicRoutes(app *fiber.App, jwtSecret string) {
 	group := app.Group("/api/users")
+
+	// Pass the secret via an anonymous wrapper so the Login method can use it
 	group.Post("/register", h.Register)
-	group.Post("/login", h.Login)
+	group.Post("/login", func(c fiber.Ctx) error {
+		return h.Login(c, jwtSecret)
+	})
 }
 
-func (h *UserHandler) RegisterProtectedRoutes(app *fiber.App) {
-	group := app.Group("/api/users")
+func (h *UserHandler) RegisterProtectedRoutes(app *fiber.App, jwtSecret string) {
+	// This subgroup is now explicitly protected
+	group := app.Group("/api/users", security.JWTMiddleware(jwtSecret))
+
 	group.Get("/:id", h.GetUserByID)
 	group.Delete("/:id", security.RequireRole(models.RoleAdmin), h.DeleteUser)
 }
 
 func (h *UserHandler) Register(c fiber.Ctx) error {
-	h.logger.Debug("In Register")
 	var req AuthRequest
-
 	if err := c.Bind().Body(&req); err != nil {
-		h.logger.Warn("registration failed: invalid JSON payload", err)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid JSON payload",
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON payload"})
 	}
 
 	user, err := h.service.RegisterUser(c.Context(), req.Email, req.Password, req.Role)
 	if err != nil {
-		h.logger.Error("registration failed: ", err)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Failed to register",
-		})
+		// Central error middleware intercepts ErrDuplicateEmail automatically and issues a 409!
+		return err
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(UserResponse{
@@ -64,30 +58,21 @@ func (h *UserHandler) Register(c fiber.Ctx) error {
 	})
 }
 
-func (h *UserHandler) Login(c fiber.Ctx) error {
+func (h *UserHandler) Login(c fiber.Ctx, jwtSecret string) error {
 	var req AuthRequest
-
 	if err := c.Bind().Body(&req); err != nil {
-		h.logger.Warn("registration failed: invalid JSON payload", err)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid JSON payload",
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON payload"})
 	}
 
 	user, err := h.service.LoginUser(c.Context(), req.Email, req.Password)
 	if err != nil {
-		h.logger.Warn("registration failed: invalid credentials", err)
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "invalid credentials",
-		})
+		// Tip: map an internal authentication failure error to StatusUnauthorized (401) in your central middleware
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid credentials"})
 	}
 
-	token, err := security.GenerateToken(user, h.jwtSecret)
+	token, err := security.GenerateToken(user, jwtSecret)
 	if err != nil {
-		h.logger.Error("registration failed: error generating token", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "failed to generate token",
-		})
+		return err
 	}
 
 	return c.JSON(fiber.Map{
@@ -106,19 +91,23 @@ func (h *UserHandler) Logout(c fiber.Ctx) error {
 
 func (h *UserHandler) GetUserByID(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		h.logger.Error("GetUserByID: invalid id", err)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid id",
-		})
+	if err != nil || id <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user id"})
+	}
+
+	// Implicit Ownership Check: Ensure users can only look up their own profile details
+	claims, ok := security.GetClaims(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+
+	if claims.UserID != id && claims.Role != models.RoleAdmin {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "access denied"})
 	}
 
 	user, err := h.service.GetUserByID(c.Context(), id)
 	if err != nil {
-		h.logger.Error("GetUserByID: user not found", err)
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "user not found",
-		})
+		return err // Automatically yields 404 via ErrNotFound mapping
 	}
 
 	return c.JSON(UserResponse{
@@ -130,28 +119,14 @@ func (h *UserHandler) GetUserByID(c fiber.Ctx) error {
 
 func (h *UserHandler) DeleteUser(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
-	if err != nil {
-		h.logger.Error("GetUserByID: invalid id", err)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid id",
-		})
+	if err != nil || id <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid user id"})
 	}
 
-	err = h.service.DeleteUser(c.Context(), id)
-	if err != nil {
-		if errors.Is(err, repositories.ErrNotFound) {
-			h.logger.Error("DeleteUser: user not found", err)
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error": "user not found",
-			})
-		}
-		h.logger.Error("DeleteUser: unknown error", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "failed to delete user",
-		})
+	// This path is already locked to Admin by the routing group wrapper
+	if err := h.service.DeleteUser(c.Context(), id); err != nil {
+		return err
 	}
 
-	return c.JSON(fiber.Map{
-		"message": "user deleted",
-	})
+	return c.JSON(fiber.Map{"message": "user deleted"})
 }

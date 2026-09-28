@@ -2,14 +2,12 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/fouched/go-todo/internal/core/models"
 	"github.com/fouched/go-todo/internal/core/repositories"
 	"github.com/fouched/toolkit/v2/faults"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -41,36 +39,6 @@ func (r *TaskRepository) Create(ctx context.Context, t *models.Task) error {
 	).Scan(&t.ID)
 
 	return faults.Wrap(err, "failed to create task")
-}
-
-func (r *TaskRepository) FindByID(ctx context.Context, id int64) (*models.Task, error) {
-	query := `
-        SELECT id, title, description, category, is_completed, user_id
-        FROM tasks
-        WHERE id = $1
-    `
-
-	var t models.Task
-
-	err := r.db.QueryRow(ctx, query, id).Scan(
-		&t.ID,
-		&t.Title,
-		&t.Description,
-		&t.Category,
-		&t.IsCompleted,
-		&t.UserID,
-	)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Annotate gives context without wiping out the core Sentinel identity!
-			return nil, faults.Annotate(repositories.ErrNotFound, fmt.Sprintf("task %d row not found", id))
-		}
-		// Wrap captures the stack track immediately for real, unexpected DB faults
-		return nil, faults.Wrap(err, "database query execution failed")
-	}
-
-	return &t, nil
 }
 
 func (r *TaskRepository) FindAllByUser(ctx context.Context, userID int64) ([]models.Task, error) {
@@ -149,6 +117,7 @@ func (r *TaskRepository) Update(ctx context.Context, t *models.Task) error {
             category = $3,
             is_completed = $4
         WHERE id = $5
+        	AND user_id = $6
     `
 
 	cmd, err := r.db.Exec(ctx, query,
@@ -157,6 +126,7 @@ func (r *TaskRepository) Update(ctx context.Context, t *models.Task) error {
 		t.Category,
 		t.IsCompleted,
 		t.ID,
+		t.UserID,
 	)
 
 	if err != nil {
@@ -170,16 +140,16 @@ func (r *TaskRepository) Update(ctx context.Context, t *models.Task) error {
 	return nil
 }
 
-func (r *TaskRepository) Delete(ctx context.Context, id int64) error {
-	query := `DELETE FROM tasks WHERE id = $1`
+func (r *TaskRepository) Delete(ctx context.Context, userID int64, taskID int64) error {
+	query := `DELETE FROM tasks WHERE id = $1 AND user_id = $2`
 
-	cmd, err := r.db.Exec(ctx, query, id)
+	cmd, err := r.db.Exec(ctx, query, taskID, userID)
 	if err != nil {
 		return faults.Wrap(err, "failed to delete task")
 	}
 
 	if cmd.RowsAffected() == 0 {
-		return faults.Annotate(repositories.ErrNotFound, fmt.Sprintf("failed to delete task %d row not found", id))
+		return faults.Annotate(repositories.ErrNotFound, fmt.Sprintf("failed to delete task %d row not found", taskID))
 	}
 
 	return nil
