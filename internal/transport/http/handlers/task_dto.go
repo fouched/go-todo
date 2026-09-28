@@ -8,10 +8,6 @@ type CreateTaskRequest struct {
 	Category    models.Category `json:"category"`
 }
 
-type GetTasksRequest struct {
-	Category string `json:"category"`
-}
-
 type UpdateTaskRequest struct {
 	Title       string          `json:"title"`
 	Description string          `json:"description"`
