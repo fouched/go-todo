@@ -128,7 +128,7 @@ func (h *TaskHandler) UpdateTask(c fiber.Ctx) error {
 		IsCompleted: req.IsCompleted,
 	}
 
-	if err := h.service.UpdateTask(c.Context(), claims.UserID, task); err != nil {
+	if err := h.service.UpdateTask(c.Context(), task); err != nil {
 		return err
 	}
 

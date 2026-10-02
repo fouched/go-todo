@@ -31,15 +31,17 @@ func (h *UserHandler) RegisterRoutes(app *fiber.App, jwtSecret string) {
 		return h.Login(c, jwtSecret)
 	})
 
-	// 3. Chain specific static paths BEFORE wildcard params to prevent shadowing
-	protectedAdmin := baseGroup.Group("", security.JWTMiddleware(jwtSecret), security.RequireRole(models.RoleAdmin))
-	protectedAdmin.Get("/all", h.GetAllUsers)
+	// 3. Admin-only endpoints group
+	// Register static sub-paths directly to isolate the role check
+	baseGroup.Get("/all", security.JWTMiddleware(jwtSecret), security.RequireRole(models.RoleAdmin), h.GetAllUsers)
 
-	// 4. Register wildcard/ID group last
-	protectedUser := baseGroup.Group("", security.JWTMiddleware(jwtSecret))
-	protectedUser.Post("/logout", h.Logout)
-	protectedUser.Get("/:id", h.GetUserByID)
-	protectedUser.Delete("/:id", security.RequireRole(models.RoleAdmin), h.DeleteUser)
+	// 4. Standard User/Authenticated endpoints group
+	// Place specific static routes BEFORE parameter wildcards
+	baseGroup.Post("/logout", security.JWTMiddleware(jwtSecret), h.Logout)
+
+	// Wildcard parameter paths go last
+	baseGroup.Get("/:id", security.JWTMiddleware(jwtSecret), h.GetUserByID)
+	baseGroup.Delete("/:id", security.JWTMiddleware(jwtSecret), security.RequireRole(models.RoleAdmin), h.DeleteUser)
 }
 
 func (h *UserHandler) Register(c fiber.Ctx) error {
@@ -131,7 +133,7 @@ func (h *UserHandler) GetUserByID(c fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 	}
 
-	if claims.UserID != id && claims.Role != models.RoleAdmin {
+	if claims.UserID != id {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "access denied"})
 	}
 
