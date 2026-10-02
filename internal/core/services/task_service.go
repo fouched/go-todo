@@ -45,3 +45,7 @@ func (s *TaskService) UpdateTask(ctx context.Context, userID int64, t *models.Ta
 func (s *TaskService) DeleteTask(ctx context.Context, userID int64, id int64) error {
 	return s.tasks.Delete(ctx, userID, id)
 }
+
+func (s *TaskService) ToggleTaskCompletion(ctx context.Context, userID int64, taskID int64, isCompleted bool) (*models.Task, error) {
+	return s.tasks.UpdateCompletionStatus(ctx, userID, taskID, isCompleted)
+}

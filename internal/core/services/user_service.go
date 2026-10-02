@@ -59,10 +59,23 @@ func (s *UserService) LoginUser(ctx context.Context, email, password string) (*m
 	return user, nil
 }
 
+func (s *UserService) GetAllUsers(ctx context.Context) ([]*models.User, error) {
+	users, err := s.users.FindAll(ctx)
+	if err != nil {
+		return nil, faults.Wrap(err, "failed to find all users")
+	}
+
+	return users, nil
+}
+
 func (s *UserService) GetUserByID(ctx context.Context, id int64) (*models.User, error) {
 	return s.users.FindByID(ctx, id)
 }
 
 func (s *UserService) DeleteUser(ctx context.Context, id int64) error {
 	return s.users.DeleteByID(ctx, id)
+}
+
+func (s *UserService) UpdateUser(ctx context.Context, u *models.User) error {
+	return s.users.Update(ctx, u)
 }

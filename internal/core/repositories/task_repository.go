@@ -12,4 +12,5 @@ type TaskRepository interface {
 	FindAllByUserAndCategory(ctx context.Context, userID int64, category string) ([]models.Task, error)
 	Update(ctx context.Context, t *models.Task) error
 	Delete(ctx context.Context, userID int64, taskID int64) error
+	UpdateCompletionStatus(ctx context.Context, id int64, userID int64, isCompleted bool) (*models.Task, error)
 }

@@ -57,12 +57,8 @@ func main() {
 	})
 	app.Use(cors.New())
 
-	// Public routes
-	userHandler.RegisterPublicRoutes(app, cfg.JWT.Secret)
-
-	// Protected paths - pass the secret explicitly so handlers can manage their own scopes
-	userHandler.RegisterProtectedRoutes(app, cfg.JWT.Secret)
-	taskHandler.RegisterProtectedRoutes(app, cfg.JWT.Secret)
+	userHandler.RegisterRoutes(app, cfg.JWT.Secret)
+	taskHandler.RegisterRoutes(app, cfg.JWT.Secret)
 
 	// Start server
 	baseLogger.Info("Starting server on :8080")

@@ -2,12 +2,14 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/fouched/go-todo/internal/core/models"
 	"github.com/fouched/go-todo/internal/core/repositories"
 	"github.com/fouched/toolkit/v2/faults"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -153,4 +155,36 @@ func (r *TaskRepository) Delete(ctx context.Context, userID int64, taskID int64)
 	}
 
 	return nil
+}
+
+func (r *TaskRepository) UpdateCompletionStatus(ctx context.Context, userID int64, taskID int64, isCompleted bool) (*models.Task, error) {
+	query := `
+		UPDATE tasks
+		SET is_completed = $1
+		WHERE id = $2 
+		  AND user_id = $3
+		RETURNING id, user_id, title, description, category, is_completed
+	`
+
+	var t models.Task
+
+	// pgx idiom: pass ctx as the first argument to QueryRow, NOT QueryRowContext
+	err := r.db.QueryRow(ctx, query, isCompleted, taskID, userID).Scan(
+		&t.ID,
+		&t.UserID,
+		&t.Title,
+		&t.Description,
+		&t.Category,
+		&t.IsCompleted,
+	)
+
+	if err != nil {
+		// pgx idiom: use pgx.ErrNoRows instead of sql.ErrNoRows!
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, faults.Annotate(repositories.ErrNotFound, fmt.Sprintf("task %d not found or access denied", taskID))
+		}
+		return nil, faults.Wrap(err, "failed to update task completion status")
+	}
+
+	return &t, nil
 }

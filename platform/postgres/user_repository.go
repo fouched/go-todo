@@ -51,6 +51,35 @@ func (r *UserRepository) Create(ctx context.Context, u *models.User) error {
 	return faults.Wrap(err, "failed to create user")
 }
 
+func (r *UserRepository) FindAll(ctx context.Context) ([]*models.User, error) {
+	query := `
+		SELECT id, email, password, role
+		FROM users
+		ORDER BY id
+	`
+
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, faults.Wrap(err, "failed to find all users")
+	}
+	defer rows.Close()
+
+	var users []*models.User
+	for rows.Next() {
+		var u models.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.Password, &u.Role); err != nil {
+			return nil, faults.Wrap(err, "failed to scan user")
+		}
+		users = append(users, &u)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, faults.Wrap(err, "failed to iterate over users")
+	}
+
+	return users, nil
+}
+
 func (r *UserRepository) FindByID(ctx context.Context, id int64) (*models.User, error) {
 	query := `
         SELECT id, email, password, role
@@ -110,11 +139,26 @@ func (r *UserRepository) DeleteByID(ctx context.Context, id int64) error {
 
 	cmdTag, err := r.db.Exec(ctx, query, id)
 	if err != nil {
-		return err
+		return faults.Wrap(err, "failed to delete user")
 	}
 
 	if cmdTag.RowsAffected() == 0 {
-		return faults.Wrap(repositories.ErrNotFound, "failed delete user")
+		return faults.Wrap(repositories.ErrNotFound, "failed to delete user")
+	}
+
+	return nil
+}
+
+func (r *UserRepository) Update(ctx context.Context, u *models.User) error {
+	query := `UPDATE users SET email = $1, password = $2, role = $3 WHERE id = $4`
+
+	cmdTag, err := r.db.Exec(ctx, query, u.Email, u.Password, u.Role, u.ID)
+	if err != nil {
+		return faults.Wrap(err, "failed to update user")
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return faults.Wrap(repositories.ErrNotFound, "failed to update user")
 	}
 
 	return nil

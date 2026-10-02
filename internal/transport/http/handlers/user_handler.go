@@ -21,22 +21,25 @@ func NewUserHandler(service UserService, logger *slog.Logger) *UserHandler {
 	}
 }
 
-func (h *UserHandler) RegisterPublicRoutes(app *fiber.App, jwtSecret string) {
-	group := app.Group("/api/users")
+func (h *UserHandler) RegisterRoutes(app *fiber.App, jwtSecret string) {
+	// 1. Define the base path exactly once
+	baseGroup := app.Group("/api/users")
 
-	// Pass the secret via an anonymous wrapper so the Login method can use it
-	group.Post("/register", h.Register)
-	group.Post("/login", func(c fiber.Ctx) error {
+	// 2. Register completely public endpoints
+	baseGroup.Post("/register", h.Register)
+	baseGroup.Post("/login", func(c fiber.Ctx) error {
 		return h.Login(c, jwtSecret)
 	})
-}
 
-func (h *UserHandler) RegisterProtectedRoutes(app *fiber.App, jwtSecret string) {
-	// This subgroup is now explicitly protected
-	group := app.Group("/api/users", security.JWTMiddleware(jwtSecret))
+	// 3. Chain specific static paths BEFORE wildcard params to prevent shadowing
+	protectedAdmin := baseGroup.Group("", security.JWTMiddleware(jwtSecret), security.RequireRole(models.RoleAdmin))
+	protectedAdmin.Get("/all", h.GetAllUsers)
 
-	group.Get("/:id", h.GetUserByID)
-	group.Delete("/:id", security.RequireRole(models.RoleAdmin), h.DeleteUser)
+	// 4. Register wildcard/ID group last
+	protectedUser := baseGroup.Group("", security.JWTMiddleware(jwtSecret))
+	protectedUser.Post("/logout", h.Logout)
+	protectedUser.Get("/:id", h.GetUserByID)
+	protectedUser.Delete("/:id", security.RequireRole(models.RoleAdmin), h.DeleteUser)
 }
 
 func (h *UserHandler) Register(c fiber.Ctx) error {
@@ -86,7 +89,34 @@ func (h *UserHandler) Login(c fiber.Ctx, jwtSecret string) error {
 }
 
 func (h *UserHandler) Logout(c fiber.Ctx) error {
-	return c.JSON(fiber.Map{"message": "logged out"})
+	// If you want to track which user logged out in your logging system:
+	claims, ok := security.GetClaims(c)
+	if ok {
+		h.logger.Info("User logged out successfully", slog.Int64("user_id", claims.UserID))
+	}
+
+	// Instruct the client to wipe its auth storage state
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Successfully logged out",
+	})
+}
+
+func (h *UserHandler) GetAllUsers(c fiber.Ctx) error {
+	users, err := h.service.GetAllUsers(c.Context())
+	if err != nil {
+		return err
+	}
+
+	var response []UserResponse
+	for _, u := range users {
+		response = append(response, UserResponse{
+			ID:    u.ID,
+			Email: u.Email,
+			Role:  u.Role,
+		})
+	}
+
+	return c.JSON(response)
 }
 
 func (h *UserHandler) GetUserByID(c fiber.Ctx) error {

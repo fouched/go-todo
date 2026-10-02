@@ -21,12 +21,18 @@ func NewTaskHandler(service TaskService, logger *slog.Logger) *TaskHandler {
 	}
 }
 
-func (h *TaskHandler) RegisterProtectedRoutes(app *fiber.App, jwtSecret string) {
-	// Everything attached to this specific subgroup is explicitly protected
+func (h *TaskHandler) RegisterRoutes(app *fiber.App, jwtSecret string) {
+	// 1. Establish the clean, protected routing tree root
 	group := app.Group("/api/tasks", security.JWTMiddleware(jwtSecret))
 
-	group.Get("/", h.GetTasksByUserAndCategory)
+	// 2. Base Resource Paths (Using explicit empty strings for Fiber v3 routing consistency)
 	group.Post("", h.CreateTask)
+	group.Get("", h.GetTasksByUserAndCategory)
+
+	// 3. Specific Sub-action modifiers (Placed logically before general wildcard actions if expanded later)
+	group.Put("/:id/completed", h.ToggleTaskCompletion)
+
+	// 4. Wildcard Parameter Resource Paths
 	group.Put("/:id", h.UpdateTask)
 	group.Delete("/:id", h.DeleteTask)
 }
@@ -153,4 +159,37 @@ func (h *TaskHandler) DeleteTask(c fiber.Ctx) error {
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *TaskHandler) ToggleTaskCompletion(c fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid task id",
+		})
+	}
+
+	claims, ok := security.GetClaims(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "unauthorized",
+		})
+	}
+
+	// Read target state from query params: ?status=true (defaults to true if omitted)
+	isCompleted := c.Query("status", "true") == "true"
+
+	// Invoke service layer contract
+	updatedTask, err := h.service.ToggleTaskCompletion(c.Context(), claims.UserID, id, isCompleted)
+	if err != nil {
+		return err
+	}
+
+	return c.Status(fiber.StatusOK).JSON(TaskResponse{
+		ID:          updatedTask.ID,
+		Title:       updatedTask.Title,
+		Description: updatedTask.Description,
+		Category:    updatedTask.Category,
+		IsCompleted: updatedTask.IsCompleted,
+	})
 }
