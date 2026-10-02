@@ -38,7 +38,7 @@ func (s *TaskService) GetTasksByUserAndCategory(ctx context.Context, userID int6
 	return s.tasks.FindAllByUserAndCategory(ctx, userID, category)
 }
 
-func (s *TaskService) UpdateTask(ctx context.Context, userID int64, t *models.Task) error {
+func (s *TaskService) UpdateTask(ctx context.Context, t *models.Task) error {
 	return s.tasks.Update(ctx, t)
 }
 
